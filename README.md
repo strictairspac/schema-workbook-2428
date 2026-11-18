@@ -6,7 +6,16 @@
 
 原先设计员在Excel里堆叠委托号、客户、检测项、方法与结果，再手工画表结构。痛点：依赖口径难确认、复合键容易漏判、拆表后无法证明无损。上游为委托单和已确认业务规则，本项目承接关系草案登记、函数依赖编辑、3NF合成、验证报告导出，下游为实验数据录入系统的数据库设计人员。
 
-核心实体：关系草案 Relation、函数依赖 Dependency、分解报告 Report。4业务页和独立登录页；管理员另有审计页。业务规则不执行为SQL，属性名是纯数据。
+核心实体：关系草案 Relation、函数依赖 Dependency、分解报告 Report、改名批次 RenameBatch。4业务页和独立登录页；管理员另有审计页。业务规则不执行为SQL，属性名是纯数据。
+
+## 属性改名
+
+业务属性名随委托口径调整，直接改名单元格会让函数依赖失联。草案内批量改名以基线版本提交，改名与依赖改写在同一事务完成：
+
+1. 批量改名：`POST /relations/{id}/renames` 携带 `base_version`、`idempotency_key` 与 `renames`（old→new 列表）。同一批内允许两属性互换名称。服务端逐项检查（基线一致、原名称存在、新名称有效、目标无冲突、改名后唯一、依赖跟随、报告保留原文）并在页面展示生效或冲突原因；任一不通过则整批不生效，保留整套旧版。
+2. 依赖跟随：改名事务同步改写依赖中的属性名，已有依赖仍指向原来的属性；历史报告为冻结快照，保留原文；改名期间发起的分解采用完整的改名前或改名后名称。
+3. 版本化依赖写入：每次改名或属性集变更推进 `attr_version`。依赖编辑页提交时携带页面加载时的版本，旧编辑页在改名后仍按原版本增改依赖，服务端沿改名批次链翻译为当前名称；缺少版本且名称经历过改名（指向有歧义）时返回409，避免把规则写给另一属性。
+4. 并发与重试：改名、依赖写入、草案更新先锁定草案行（MySQL `SELECT ... FOR UPDATE`）再校验，同一基线的并发改名只有一个生效，其余409；`idempotency_key` 在草案内唯一，重试返回已记录批次，不重复改名。
 
 ## 快速启动
 
@@ -58,7 +67,7 @@ Python真算，MySQL保存草案/依赖与结果，Redis传递任务，独立wor
 
 枚举：角色admin/operator/viewer、任务queued/running/completed/failed；前后端定义位于 `backend/src/constants/enums.py` 和 `frontend/src/constants/enums.js`，security/reports、frame/badge消费；worker持久化状态。
 
-环境变量见.env.example：COMPOSE_PROJECT_NAME、FRONTEND_PORT/BACKEND_PORT/DB_PORT、DB_PASSWORD、JWT_SECRET、SEED_DEMO。默认密码仅本地演示，JWT8小时。seed按自然键只补缺失关系及初始依赖，不覆盖用户修改。schema由SQLAlchemy metadata.create_all初始化，无在线迁移引擎。
+环境变量见.env.example：COMPOSE_PROJECT_NAME、FRONTEND_PORT/BACKEND_PORT/DB_PORT、DB_PASSWORD、JWT_SECRET、SEED_DEMO。默认密码仅本地演示，JWT8小时。seed按自然键只补缺失关系及初始依赖，不覆盖用户修改。schema由SQLAlchemy metadata.create_all初始化，启动时对 relations.attr_version 做幂等补列，无在线迁移引擎。
 
 本地开发：Python3.11安装backend/requirements.txt，配置DATABASE_URL/REDIS_URL后从backend运行 `uvicorn src.main:app --reload`、`python -m src.worker`；前端用Nginx同源代理/api。5服务均有健康检查和健康依赖，数据库/Redis/worker产物为独立命名卷。停止清空：`docker compose down -v --remove-orphans`。
 

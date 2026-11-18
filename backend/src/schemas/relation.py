@@ -9,3 +9,10 @@ class RelationInput(BaseModel):
     def attributes_valid(cls,value):
         if len(set(value))!=len(value) or any(not x.strip() or len(x)>40 for x in value): raise ValueError('属性必须唯一且非空，每项不超过40字')
         return value
+class RenameItem(BaseModel):
+    old:str=Field(min_length=1,max_length=40)
+    new:str=Field(min_length=1,max_length=40)
+class RenameInput(BaseModel):
+    base_version:int=Field(ge=1)
+    idempotency_key:str=Field(min_length=8,max_length=80)
+    renames:list[RenameItem]=Field(min_length=1,max_length=10)

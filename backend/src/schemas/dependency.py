@@ -4,6 +4,7 @@ class DependencyInput(BaseModel):
     lhs:list[str]=Field(max_length=10)
     rhs:list[str]=Field(min_length=1,max_length=10)
     note:str=Field(default='',max_length=300)
+    attr_version:int|None=Field(default=None,ge=1)
     @field_validator('lhs','rhs')
     @classmethod
     def valid_attributes(cls,v):
